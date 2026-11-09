@@ -2,6 +2,8 @@
 
 一款面向移动端与桌面浏览器的德州扑克策略训练和多人对局应用。项目以零依赖的 Node.js 服务端承载页面、音效、卡牌素材和联机消息，既可单人练习，也可通过局域网或临时公网隧道与朋友对局。
 
+**在线访问：<https://yingqi0906.github.io/gto-strategy-incubator/>**
+
 ![对局主界面](shot-scene-table.png)
 
 ## 功能
