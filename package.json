@@ -1,0 +1,14 @@
+{
+  "name": "gto-strategy-incubator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "移动端德州扑克 GTO 策略训练与多人对局应用",
+  "scripts": {
+    "start": "node server.js",
+    "start:public": "node tunnel-host.js",
+    "test": "node test-core.js && node test-pots.js && node verify-preflop.js && node test-postflop-table.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

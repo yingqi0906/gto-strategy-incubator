@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>对局信息面板 · 实测预览</title>
+<style>
+
+  /* ============ 设计令牌（主题色集中管理：改主题 / 微调只动这里） ============ */
+  :root {
+    /* 背景层级：页面底 → 面板 → 浮层 */
+    --bg-page: #0c1420;
+    --bg-bar: #0e1826;
+    --bg-panel: #131f30;
+    --bg-sunken: #0e1626;
+    --bg-raised: #16233a;
+    --bg-btn: #24344d;
+    --bg-btn-hover: #31466a;
+    --bg-header: #1b2a42;
+    --bg-header-hover: #24365a;
+    /* 描边 */
+    --line: #22314a;
+    --line-strong: #2a3f63;
+    --line-btn: #3a5070;
+    --line-focus: #6f9ee8;
+    /* 文字三级 */
+    --text: #e8eef5;
+    --text-2: #b9c8dd;
+    --text-3: #9db2cc;
+    --text-dim: #8fa5c0;
+    --text-mute: #8fa5c0;
+    /* 强调色 */
+    --gold: #ffd54a;
+    --blue: #7ec8ff;
+    --green: #43d17c;
+    --green-btn: #1d7a50;
+    --green-btn-line: #2ba06a;
+    --danger: #8e3038;
+    --danger-line: #b0454e;
+    --warn: #8a6413;
+    --warn-line: #b08620;
+    --purple: #e0b3f5;
+    /* 牌桌 */
+    --felt-1: #14724a;
+    --felt-2: #0e5c3b;
+    --felt-3: #0a4a2f;
+    --felt-line: #1d7a50;
+    --table-rail: #33465a;
+    --table-rim: #22303e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg-page);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-variant-numeric: tabular-nums; /* 筹码/底池等数字等宽，跳动时不抖动 */
+    overflow: hidden;
+    user-select: none;
+  }
+  /* 键盘可达性：统一的焦点环（仅键盘聚焦时出现，不干扰鼠标操作） */
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--line-focus); outline-offset: 2px; border-radius: 8px;
+  }
+  :root {
+    /* 底部操作区（行动条）高度：右下角/左下角悬浮按钮据此上移到行动条上方，
+       避免在手机端压住"弃牌/过牌/加注"按钮与快捷下注行 */
+    --action-bar-h: 170px;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr var(--action-bar-h);
+    height: 100vh;
+    height: 100dvh; /* iOS Safari：随底部网址栏动态收缩，避免内容被遮挡 */
+  }
+  #table-area { grid-area: 1 / 1 / 2 / 2; display: flex; align-items: center; justify-content: center; min-width: 0; }
+
+  /* 左上角菜单：买入 / 本局战绩 / 对局信息 / 历史战绩 / 退出牌局（游戏中显示） */
+  #tl-buttons {
+    position: fixed; top: 8px; left: 10px; z-index: 60;
+    display: none; flex-direction: column; align-items: flex-start; gap: 6px;
+  }
+  #menu-toggle, #menu-list button {
+    background: #1b2a42; color: #cfe0f5; border: 1px solid #2a3f63; border-radius: 8px;
+    padding: 6px 14px; font-size: 13px; cursor: pointer; font-family: inherit; font-weight: bold;
+    white-space: nowrap; text-align: center; min-width: 132px;
+  }
+  #menu-toggle:hover, #menu-list button:hover { background: #24365a; }
+  /* 菜单展开后的条目列：整体一块浮层，退出牌局固定在最下方 */
+  #menu-list {
+    display: flex; flex-direction: column; gap: 6px; align-items: stretch;
+    background: rgba(13, 21, 34, .96); border: 1px solid #22314a; border-radius: 10px;
+    padding: 6px; box-shadow: 0 6px 22px rgba(0,0,0,.55);
+  }
+  #menu-list.hidden { display: none; }
+  #menu-list button { border-radius: 8px; }
+  #exit-toggle { border-color: #6b2b2b; color: #ffb3b3; }
+  #exit-toggle:hover { background: #3a1a1a; }
+
+  /* ---------- 聊天按钮（左下角，聊天气泡图形；可长按拖动到任意位置） ---------- */
+  /* 底部操作区上方（手机端操作按钮较多，按钮若停靠在视口底部会压住"弃牌/加注"等） */
+  #chat-toggle {
+    position: fixed; left: 12px;
+    bottom: calc(var(--action-bar-h) + 10px + env(safe-area-inset-bottom, 0px)); z-index: 55;
+    width: 52px; height: 52px; border-radius: 50%; padding: 0;
+    background: #1b2a42; border: 1px solid #2a3f63; cursor: pointer; font-family: inherit;
+    display: none; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+    touch-action: none; /* 拖动换位：触摸移动不触发页面滚动 */
+    user-select: none; -webkit-user-select: none;
+  }
+  #chat-toggle.show { display: flex; }
+  #chat-toggle:hover { background: #24365a; }
+  #chat-toggle svg { width: 26px; height: 26px; display: block; }
+  #chat-badge {
+    position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px;
+    border-radius: 9px; background: #e5484d; color: #fff; font-size: 11px; font-weight: bold;
+    display: none; align-items: center; justify-content: center; padding: 0 4px;
+    border: 1px solid #131f30;
+  }
+  #chat-badge.show { display: flex; }
+
+  /* ---------- 设置按钮（右下角，齿轮图形） ---------- */
+  #settings-fab {
+    position: fixed; right: 12px;
+    bottom: calc(var(--action-bar-h) + 10px + env(safe-area-inset-bottom, 0px)); z-index: 55;
+    width: 52px; height: 52px; border-radius: 50%; padding: 0;
+    background: #1b2a42; border: 1px solid #2a3f63; cursor: pointer; font-family: inherit;
+    display: none; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+  }
+  #settings-fab.show { display: flex; }
+  #settings-fab:hover { background: #24365a; }
+  #settings-fab svg { width: 26px; height: 26px; display: block; }
+
+  /* ---------- 设置弹窗 ---------- */
+  .settings-sec { font-size: 13px; font-weight: bold; color: #e0b3f5; margin: 14px 0 6px; text-align: left; }
+  #sound-toggle-row { display: flex; gap: 8px; }
+  #sound-toggle-row .btn { flex: 1; }
+  #sound-toggle-row .btn.active { background: #2f6f3f; border-color: #4caf6d; color: #dff5e4; }
+  .betpct-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .betpct-row .betpct-name { flex: none; width: 52px; font-size: 13.5px; color: #cfe0f5; text-align: left; }
+  .betpct-row input[type="range"] { flex: 1; accent-color: #ffd54a; }
+  .betpct-row .betpct-val { flex: none; width: 52px; font-size: 13.5px; font-weight: bold; color: #ffd54a; text-align: right; }
+
+  /* ---------- 聊天面板（微信风格：他人居左，自己居右） ---------- */
+  #chat-box {
+    display: flex; flex-direction: column; text-align: left;
+    width: min(430px, 92vw); height: min(72dvh, 560px); overflow: hidden;
+  }
+  #chat-box h2 { flex: none; margin-bottom: 8px; }
+  #chat-msgs {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    display: flex; flex-direction: column; gap: 10px; padding: 8px 2px 4px;
+  }
+  .chat-row { display: flex; flex-direction: column; align-items: flex-start; max-width: 82%; }
+  .chat-row.me { align-items: flex-end; }
+  .chat-who { font-size: 12px; color: #8fa5c0; margin: 0 4px 3px; }
+  .chat-row.me .chat-who { color: #6f9e5f; }
+  .chat-bubble {
+    padding: 8px 12px; border-radius: 10px; font-size: 14px; line-height: 1.55;
+    word-break: break-word; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .chat-row:not(.me) .chat-bubble { background: #ffffff; color: #1d2530; border-top-left-radius: 3px; }
+  .chat-row.me .chat-bubble { background: #95ec69; color: #17301d; border-top-right-radius: 3px; }
+  #chat-empty { color: #71889f; font-size: 13px; text-align: center; padding: 24px 0; }
+  #chat-input-row { flex: none; display: flex; gap: 8px; margin-top: 10px; }
+  #chat-input {
+    flex: 1; min-width: 0; background: #0e1626; border: 1px solid #2a3f63; border-radius: 8px;
+    color: #e8eef5; padding: 9px 12px; font-size: 15px; font-family: inherit;
+  }
+  #chat-input:focus { outline: none; border-color: #3f66a8; }
+  #chat-hint {
+    flex: none; color: #ff9f9f; font-size: 12px; margin-top: 6px; min-height: 16px;
+    text-align: left; visibility: hidden;
+  }
+  #chat-hint.show { visibility: visible; }
+  #chat-close-row { flex: none; display: flex; justify-content: center; margin-top: 4px; }
+  @media (max-width: 820px) {
+    #chat-box { height: min(76dvh, 560px); }
+  }
+
+  /* ---------- 鱿鱼游戏：顶部投票条 / 全员提示 / 标记徽章 ---------- */
+  #squid-vote {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 10px; z-index: 65;
+    background: rgba(13, 21, 34, .97); border: 1px solid #8f4bb5; border-radius: 12px;
+    padding: 10px 12px; display: none; flex-direction: column; gap: 7px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.55); max-width: min(320px, 86vw); text-align: left;
+  }
+  #squid-vote.show { display: flex; }
+  #squid-vote .sv-head { display: flex; align-items: center; gap: 8px; }
+  #squid-vote .sv-head svg { width: 20px; height: 20px; flex: none; display: block; }
+  #squid-vote .sv-title { font-size: 13px; font-weight: bold; color: #e0b3f5; letter-spacing: 1px; }
+  #squid-vote .sv-price {
+    margin-left: auto; font-size: 12px; font-weight: bold; color: #ffd54a;
+    background: rgba(255,213,74,.1); border: 1px solid rgba(168,119,36,.6);
+    border-radius: 10px; padding: 1px 8px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  #squid-vote .sv-prog { height: 5px; border-radius: 3px; background: #1b2a42; overflow: hidden; }
+  #squid-vote .sv-prog i { display: block; height: 100%; width: 0; background: #9b59d0; border-radius: 3px; transition: width .25s; }
+  #squid-vote .sv-info { font-size: 11.5px; color: #cfe0f5; line-height: 1.5; }
+  #squid-vote .sv-btns { display: flex; gap: 8px; }
+  /* 鱿鱼游戏发起弹窗 v2：SVG 头部 + 编号规则行 + 价格区块化（🦑 emoji 一律换内联 SVG，跨端渲染一致） */
+  #squid-modal .modal-box {
+    min-width: 0; width: min(380px, 92vw); padding: 0; overflow: hidden; text-align: left;
+  }
+  #squid-modal .sq-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 16px 12px;
+    background: linear-gradient(135deg, rgba(255,213,74,.12), rgba(255,213,74,.03));
+    border-bottom: 1px solid #2a3f63;
+  }
+  #squid-modal .sq-head svg { width: 30px; height: 30px; flex: none; display: block; }
+  #squid-modal .sq-t { font-size: 16px; font-weight: bold; color: #ffd54a; letter-spacing: 2px; }
+  #squid-modal .sq-st { font-size: 10.5px; color: #8fa0b8; margin-top: 2px; }
+  #squid-modal .sq-rules { padding: 8px 16px 2px; }
+  #squid-modal .rule { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
+  #squid-modal .rule + .rule { border-top: 1px dashed rgba(42,63,99,.7); }
+  #squid-modal .rule .no {
+    flex: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #1b2a42; border: 1px solid #a87724; color: #ffd54a;
+    font-size: 10px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+  }
+  #squid-modal .rule .tx { font-size: 12px; line-height: 1.5; color: #e8eef5; }
+  #squid-modal .rule .tx em { font-style: normal; color: #8fa0b8; font-size: 11px; }
+  #squid-modal .rule .tx b { color: #ffd54a; }
+  #squid-modal .rule .tx .hl { color: #7fb3d5; }
+  #squid-modal .sq-price {
+    margin: 10px 16px 0;
+    background: #16233a; border: 1px solid #2a3f63; border-radius: 10px;
+    padding: 12px 14px 10px;
+  }
+  #squid-modal .sq-price-head { display: flex; align-items: baseline; margin-bottom: 6px; }
+  #squid-modal .sq-price-head .lbl { color: #8fa0b8; font-size: 11px; letter-spacing: 1px; }
+  #squid-modal .sq-price-head .fine { margin-left: auto; font-size: 10.5px; color: #66788f; margin-right: 10px; }
+  #squid-modal .sq-price-head .val {
+    font-family: Consolas, "Courier New", monospace; font-size: 24px; font-weight: bold; color: #e8eef5;
+  }
+  #squid-modal .sq-price-head .val small { font-size: 12px; color: #8fa0b8; font-weight: normal; margin-left: 2px; }
+  #squid-modal #squid-slider { width: 100%; accent-color: #378add; margin: 8px 0 0; display: block; }
+  #squid-modal .sq-scale {
+    display: flex; justify-content: space-between; color: #66788f; font-size: 10px;
+    margin-top: 4px; font-family: Consolas, "Courier New", monospace;
+  }
+  #squid-modal .sq-actions { display: flex; gap: 10px; padding: 14px 16px 16px; margin-top: 0; }
+  #squid-modal .sq-actions .btn { flex: 1; }
+  #squid-modal .sq-actions .btn.primary { flex: 1.6; }  /* 主动作加宽，主次比例 2:1 */
+  .sq-badge { display: inline-block; margin-left: 4px; font-size: 11px; line-height: 1; vertical-align: middle; }
+  .sq-badge img { width: 13px; height: 15px; display: block; user-select: none; pointer-events: none; }
+
+  /* ---------- 发两次（Run it Twice） ---------- */
+  #rit-modal .rit-tip { font-size: 13px; color: #cfe0f5; line-height: 1.7; text-align: center; margin: 6px 0 10px; }
+  #rit-modal .rit-count {
+    font-size: 30px; font-weight: bold; color: #ffd54a; text-align: center; line-height: 1;
+    margin-bottom: 12px; font-variant-numeric: tabular-nums;
+  }
+  #rit-modal .rit-count.urgent { color: #ff8f8f; }
+  #rit-modal .rit-status { font-size: 12.5px; color: #9fd8ff; text-align: center; margin-top: 10px; min-height: 18px; }
+  /* 双牌面（发两次）：两行公共牌，各自标注"第 1 次 / 第 2 次" */
+  #board.rit-dual { flex-direction: column; gap: 3px; }
+  #board.rit-dual .rit-row { display: flex; gap: 5px; align-items: center; justify-content: center; }
+  #board.rit-dual .rit-tag {
+    font-size: 10px; color: #9fd8ff; font-weight: bold; min-width: 34px; text-align: right;
+    flex: none;
+  }
+  /* 某次发牌中输掉的一方：该行标注为灰 */
+  #board.rit-dual .rit-row.lose .rit-tag { color: #8a99ab; }
+  #board.rit-dual .rit-row.win .rit-tag { color: #43d17c; }
+  /* 获得鱿鱼标记：🦑 从牌桌中央飞向该玩家的头像 */
+  .fly-squid {
+    position: absolute; z-index: 22; line-height: 1;
+    pointer-events: none; transform: translate(-50%, -50%);
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,.55));
+  }
+  .fly-squid img { width: 34px; height: 38px; display: block; user-select: none; pointer-events: none; }
+  #squid-toast {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%; transform: translateX(-50%);
+    z-index: 80; background: rgba(24, 14, 34, .97); border: 1px solid #8f4bb5; border-radius: 10px;
+    color: #f0dcff; font-size: 14px; font-weight: bold; padding: 10px 18px;
+    display: none; max-width: min(430px, 88vw); text-align: center;
+    box-shadow: 0 6px 22px rgba(0,0,0,.6);
+  }
+  #squid-toast.show { display: block; }
+
+  /* 买入弹窗 */
+  #buyin-slider { width: 100%; accent-color: #ffd54a; margin-top: 12px; }
+  .buyin-row { text-align: center; font-size: 16px; color: #cfe0f5; margin-top: 8px; }
+  .buyin-row b { color: #ffd54a; font-size: 22px; margin-left: 4px; }
+  .buyin-scale { display: flex; justify-content: space-between; color: #71889f; font-size: 12px; margin-top: 4px; }
+  .buyin-tip { font-size: 12.5px; color: #7f9cc0; text-align: center; margin-top: 10px; }
+
+  /* ---------- 历史战绩弹窗 ---------- */
+  .modal {
+    position: fixed; inset: 0; background: rgba(5, 10, 18, .8); z-index: 90;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal.hidden { display: none; }
+  .modal-box {
+    background: #131f30; border: 1px solid #2a3f63; border-radius: 16px;
+    padding: 26px 32px; max-width: 560px; min-width: 380px; text-align: center;
+    max-height: 88vh; overflow-y: auto;
+  }
+  .modal-box h2 { font-size: 20px; color: #ffd54a; margin-bottom: 14px; }
+  #stats-table {
+    width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 13px;
+  }
+  #stats-table th, #stats-table td {
+    border: 1px solid #2a3f63; padding: 6px 10px; text-align: center;
+  }
+  #stats-table th { background: #16233a; color: #8fb3d9; font-weight: bold; }
+  #stats-table td { color: #e8eef5; }
+  #stats-table td.profit-pos { color: #43d17c; font-weight: bold; }
+  #stats-table td.profit-neg { color: #ff7b7b; font-weight: bold; }
+  #stats-empty { color: #71889f; font-size: 13px; padding: 14px 0; }
+  #session-table {
+    width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 13px;
+  }
+  #session-table th, #session-table td {
+    border: 1px solid #2a3f63; padding: 6px 10px; text-align: center;
+  }
+  #session-table th { background: #16233a; color: #8fb3d9; font-weight: bold; }
+  #session-table td { color: #e8eef5; }
+  #session-table td.profit-pos { color: #43d17c; font-weight: bold; }
+  #session-table td.profit-neg { color: #ff7b7b; font-weight: bold; }
+  #session-empty { color: #71889f; font-size: 13px; padding: 14px 0; }
+  .modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 12px; }
+  #stats-confirm-text { font-size: 14px; color: #e8eef5; line-height: 1.8; margin: 6px 0 4px; }
+
+  #side-panel {
+    position: fixed; top: 44px; right: 10px; bottom: 180px; width: 340px;
+    display: none; flex-direction: column;
+    background: rgba(13, 21, 34, .97); border: 1px solid #22314a; border-radius: 10px;
+    padding: 10px; z-index: 30; box-shadow: 0 4px 24px rgba(0,0,0,.55);
+  }
+  #side-panel.open { display: flex; }
+
+  #table {
+    width: 780px; height: 460px; max-width: 96%;
+    border-radius: 230px;
+    background: #22303e;
+    border: 12px solid #33465a;
+    position: relative;
+  }
+  /* 大屏：牌桌随视口放大（上限 1120×660），避免两侧大面积死空间 */
+  @media (min-width: 1200px) and (min-height: 720px) {
+    /* 高度约束改用真实行动条高度（--action-bar-h 由 syncActionBarH() 实测回写），
+       不再用 230px 这个硬编码猜测值；76px 余量 = 顶部/底部座位外扩（百分比坐标
+       超出牌桌边缘 3~4%，座位手牌需完整可见）+ 呼吸余量 */
+    #table { width: min(1120px, 78vw, calc((100dvh - var(--action-bar-h) - 76px) * 780 / 460)); height: auto; aspect-ratio: 780 / 460; }
+    #center-info { width: 560px; }
+    .card.md, .card.sm { width: 48px; height: 68px; font-size: 19px; }
+    .card.lg { width: 58px; height: 82px; font-size: 24px; }
+    #board { min-height: 72px; gap: 10px; }
+    #board .card-slot { width: 52px; height: 72px; }
+    .seat { width: 176px; }
+    .seat .hole-cards { min-height: 68px; }
+    .seat .info .name { max-width: 166px; }
+    #pot-display { font-size: 17px; }
+  }
+  #table-inner {
+    position: absolute; inset: 16px;
+    border-radius: 210px;
+    background: radial-gradient(ellipse at center, #14724a 0%, #0e5c3b 55%, #0a4a2f 100%);
+    border: 2px solid #1d7a50;
+    position: absolute;
+  }
+  #center-info {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    text-align: center; width: 420px;
+  }
+  #pot-display {
+    display: inline-block; background: rgba(0,0,0,.45); border: 1px solid rgba(255,215,90,.4);
+    color: #ffd54a; font-weight: bold; font-size: 15px; border-radius: 16px; padding: 3px 16px; margin-bottom: 8px;
+  }
+  #board { display: flex; gap: 8px; justify-content: center; min-height: 64px; align-items: center; }
+  /* 鱿鱼游戏：牌桌中间的"剩余未发放鱿鱼标记数"（🦑 ×n，n = 还没拿到标记的玩家数）
+     游戏结束条件：只剩最后 1 人没有标记 → n 减到 1 时游戏结束、该玩家支付 */
+  #squid-left {
+    display: none; margin: -2px 0 6px; align-items: center; justify-content: center; gap: 5px;
+    width: fit-content; margin-left: auto; margin-right: auto;
+    background: rgba(0,0,0,.45); border: 1px solid rgba(224,179,245,.5);
+    color: #e0b3f5; font-weight: bold; font-size: 13px; border-radius: 14px; padding: 2px 12px;
+  }
+  #squid-left.show { display: flex; }
+  #squid-left img { width: 18px; height: 20px; display: block; user-select: none; pointer-events: none; }
+  #squid-left b { color: #f0d2ff; }
+  /* 公共牌空槽：提高对比度 + 极淡填充，让"牌将发在这里"一眼可见 */
+  #board .card-slot {
+    width: 46px; height: 64px; border-radius: 6px;
+    border: 1px dashed rgba(255,255,255,.45);
+    background: rgba(255,255,255,.06);
+    box-shadow: inset 0 0 12px rgba(0,0,0,.18);
+  }
+  /* 超能力B：提前看见的转牌 / 河牌（虚线金框 + 半透明，与已发出的公共牌区分） */
+  #board .card.peek {
+    box-shadow: 0 0 0 2px #ffd54a, 0 0 12px rgba(255, 213, 74, .5);
+    opacity: .88;
+  }
+  #board .card.peek::after {
+    content: '👁'; position: absolute; top: -7px; right: -6px; font-size: 11px; line-height: 1;
+  }
+  #board .card { position: relative; }
+  #peek-tag {
+    display: none; margin-top: 6px; font-size: 12px; color: #ffd54a;
+    background: rgba(255, 213, 74, .12); border: 1px solid rgba(255, 213, 74, .45);
+    border-radius: 8px; padding: 2px 10px;
+  }
+  #peek-tag.show { display: inline-block; }
+  /* 超能力A：看见的对手底牌（金色描边以示"透视"） */
+  .card.power { box-shadow: 0 0 0 2px rgba(255, 213, 74, .85); }
+  .pw-badge {
+    display: inline-block; margin-left: 4px; font-size: 10px; font-weight: bold;
+    color: #ffd54a; border: 1px solid rgba(255, 213, 74, .6); border-radius: 6px;
+    padding: 0 4px; vertical-align: middle;
+  }
+  /* 大厅超能力选择 */
+  .power-pick { display: inline-flex; gap: 4px; flex: none; }
+  .power-pick button {
+    background: #1b2a42; color: #cfe0f5; border: 1px solid #2a3f63; border-radius: 6px;
+    padding: 2px 8px; font-size: 12px; cursor: pointer; font-family: inherit; font-weight: bold;
+  }
+  .power-pick button:hover { background: #24365a; }
+  .power-pick button.on { background: #ffd54a; color: #22303f; border-color: #ffd54a; }
+  .power-legend { font-size: 12px; color: #8fb3d9; text-align: left; line-height: 1.7; margin: 4px 0 0; }
+  .power-legend b { color: #ffd54a; }
+  #table-msg { margin-top: 10px; font-size: 14px; color: #bfe8d2; min-height: 20px; }
+  #table-msg b { color: #ffd54a; }
+
+  .card {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #fdfdf8; border: 1px solid #b9b9b0; border-radius: 6px;
+    font-weight: 700; font-family: Arial, sans-serif;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+    color: #1a1a1a;
+    user-select: none; -webkit-user-select: none; /* 防手机长按选中文字干扰秀牌手势 */
+    overflow: hidden;
+  }
+  .card img { width: 100%; height: 100%; display: block; pointer-events: none; }
+  .card.red { color: #c0392b; }
+  /* 四色扑克（牌面白底）：红桃红 / 方片蓝 / 梅花绿 / 黑桃黑 */
+  .card .st-h { color: #d32f2f; }
+  .card .st-d { color: #2f7fd6; }
+  .card .st-c { color: #1f9d55; }
+  .card .st-s { color: #111; }
+  /* 对局信息面板/状态栏（深色底）：同四色方案，黑桃用近白保证可读 */
+  #log .st-h { color: #ff6b6b; }
+  #log .st-d { color: #5aa2ff; }
+  #log .st-c { color: #4cd07d; }
+  #log .st-s { color: #e8eef5; }
+  .card.md { width: 42px; height: 60px; font-size: 17px; }
+  .card.sm { width: 42px; height: 60px; font-size: 17px; }
+  .card.lg { width: 54px; height: 76px; font-size: 22px; }
+  .card.back {
+    background: url('pic/tex_card_back@v1.png') center / 100% 100% no-repeat, #23405c;
+    border-color: #1c3448;
+  }
+
+  .seat {
+    position: absolute; width: 160px; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: 4px; z-index: 5;
+  }
+  .seat .hole-cards { display: flex; gap: 4px; min-height: 60px; }
+  .seat .info {
+    background: rgba(8, 16, 24, .88); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px; padding: 4px 12px; text-align: center; min-width: 120px;
+    transition: box-shadow .2s;
+  }
+  .seat.empty .info { opacity: .45; }
+  .seat.offline .info { border-color: #b0454e; }
+  .seat .info .name {
+    font-size: 13px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 6px;
+    /* 名字不折行：过长用省略号截断（避免"评审核（玩 家）"两行撑高名字牌） */
+    max-width: 150px; white-space: nowrap; overflow: hidden;
+  }
+  .seat .info .name .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .seat .info .name .avatar, .seat .info .name .pw-badge, .seat .info .name .sq-badge { flex: none; }
+  .seat .info .chips { font-size: 13px; color: #ffd54a; font-weight: bold; }
+  /* 下注标记：单枚筹码 + 金额数字（去掉原"下注 xx"大胶囊），尽量减少互相遮挡；
+     数字用强投影保证在绿毡上可读，筹码用 drop-shadow 保证可辨 */
+  .bet-chip {
+    position: absolute; transform: translate(-50%, -50%);
+    z-index: 6;
+    display: none; align-items: center;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.55));
+  }
+  .bet-chip .amt {
+    margin-left: 5px; font-size: 12px; font-weight: bold; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.8);
+    white-space: nowrap;
+  }
+  /* ---------- 筹码图片（多面值彩色筹码堆） ---------- */
+  .chipstack { display: inline-flex; align-items: flex-end; vertical-align: middle; }
+  .chipstack + .chipstack { margin-left: 3px; }
+  .cstack { position: relative; display: inline-block; width: 14px; }
+  .cstack .chip {
+    position: absolute; left: 0; width: 14px; height: 14px;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.45));
+    user-select: none; -webkit-user-drag: none; pointer-events: none;
+  }
+  #pot-display .chipstack { margin-right: 7px; }
+  @media (max-width: 820px) {
+    .cstack { width: 11px; }
+    .cstack .chip { width: 11px; height: 11px; }
+    #pot-display .chipstack { margin-right: 5px; }
+  }
+  .seat .avatar {
+    width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center;
+    justify-content: center; font-size: 12px; font-weight: bold; color: #fff; flex: none;
+  }
+  .seat.active .info { box-shadow: 0 0 0 2px #ffd54a; }
+  /* 行动玩家：闪烁的边框作为思考倒计时进度条（--tp=已耗百分比，边框从全包裹顺时针缩短至消失）
+     注：直接用 var(--tp, 0%) 百分比值，不用 calc(var()*1%)——后者在部分移动端 WebKit 上不生效 */
+  .seat.acting .info { position: relative; }
+  .seat.acting .info::after {
+    content: ''; position: absolute; inset: -5px; border-radius: 13px; padding: 2.5px;
+    background: conic-gradient(from 0deg, transparent var(--tp, 0%), #ff9f27 var(--tp, 0%));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    animation: think-blink 1s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes think-blink { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+  .seat.folded { opacity: .4; }
+  .seat.winner .info { box-shadow: 0 0 0 2px #43d17c; background: rgba(20, 80, 40, .9); }
+  /* 位置徽章组：庄位 D / 小盲 S / 大盲 B 并排贴在名字牌上沿。
+     用 flex 容器统一排布（row-reverse：DOM 里第一个在最右），这样 D 独占时仍停在
+     原来的 right:24px 位置；单挑时 D 与 S 同座（按钮位即小盲）也能自动排开不重叠。
+     结构：.seat-badges > .pos-badge.dealer-btn|sb-badge|bb-badge */
+  .seat .seat-badges {
+    position: absolute; top: -8px; right: 24px; z-index: 6;
+    display: flex; flex-direction: row-reverse; gap: 3px;
+  }
+  .seat .pos-badge {
+    width: 20px; height: 20px; border-radius: 50%; background: #fdfdf8;
+    color: #1a1a1a; font-size: 12px; font-weight: bold; display: none;
+    align-items: center; justify-content: center; border: 1px solid #999;
+  }
+  .seat.has-button .dealer-btn { display: flex; }
+  .seat.has-sb .sb-badge { display: flex; }
+  .seat.has-bb .bb-badge { display: flex; }
+  .seat .think { font-size: 11px; color: #ffcf7a; min-height: 14px; }
+
+  #side-panel h3 { font-size: 15px; color: #8fb3d9; margin-bottom: 6px; }
+  #room-tag {
+    display: none; vertical-align: middle; margin-left: 8px;
+    background: #1b2a42; color: #ffd54a; border: 1px solid #2a3f63; border-radius: 10px;
+    font-size: 12px; font-weight: bold; padding: 2px 10px; letter-spacing: 1px;
+  }
+  #hand-hint {
+    background: #16233a; border: 1px solid #2a3f63; border-radius: 8px; padding: 8px 10px;
+    font-size: 14px; margin-bottom: 8px; line-height: 1.55;
+  }
+  #hand-hint b { color: #ffd54a; }
+  /* 起手牌行 v2：迷你牌图片（lg 28×39），标签与牌组同行居中对齐 */
+  #hand-hint .hh-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  #hand-hint .hh-lab { font-size: 12px; color: #8fa0b8; flex: none; }
+  #hand-hint .mcards { gap: 3px; }
+  #log { flex: 1; overflow-y: auto; font-size: 13.5px; line-height: 1.75; color: #9db2cc; }
+  .history-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .hist-wrap { position: relative; flex: 1; min-width: 0; }
+  #hist-btn {
+    background: #16233a; color: #e8eef5; border: 1px solid #2a3f63; border-radius: 6px;
+    padding: 4px 10px; font-size: 13px; cursor: pointer; font-family: inherit; width: 100%;
+    text-align: left; display: flex; justify-content: space-between; align-items: center;
+  }
+  #hist-btn:hover { background: #1d2f4d; }
+  #hist-list {
+    position: absolute; top: calc(100% + 2px); left: 0; right: 0;
+    max-height: 250px; overflow-y: auto;
+    background: #16233a; border: 1px solid #2a3f63; border-radius: 6px;
+    z-index: 50; display: none; box-shadow: 0 6px 16px rgba(0,0,0,.5);
+  }
+  #hist-list.open { display: block; }
+  .hist-opt { padding: 4px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hist-opt:hover { background: #24365a; }
+  .hist-opt.sel { background: #2a4a8a; color: #fff; }
+  #log .ln-street { color: #ffd54a; font-weight: bold; margin-top: 6px; }
+  #log .ln-player { color: #e8eef5; font-weight: bold; margin-top: 4px; }
+  #log .ln-act { color: #cfe0f5; padding-left: 14px; }
+  #log .ln-opt { color: #71889f; padding-left: 14px; }
+  #log .ln-chosen { color: #ffd54a; padding-left: 14px; }
+  #log .ln-me { color: #7ec8ff; padding-left: 14px; }
+  #log .ln-win { color: #43d17c; margin-top: 4px; }
+  #log .ln-gto { color: #4db8ff; padding-left: 14px; font-weight: bold; }
+  #log .ln-gto2 { color: #6d9fc9; padding-left: 28px; }
+
+  /* ============================================================
+     对局信息面板 v2（方案A细化版）：层级阶梯 街道0 / 动作12 / 建议40
+     带 lg2 标记的行由 renderRich() 渲染，用更具体的选择器覆盖上面的旧行样式
+     ============================================================ */
+  #log { --ind-street: 0px; --ind-act: 12px; --ind-gto: 40px; }
+
+  /* ---- 迷你牌组件（动作行 md 17×24 / 街道公共牌 sm 16×22） ---- */
+  .mcard {
+    display: inline-block; position: relative; flex: none; overflow: hidden;
+    background: #fdfdf8; border-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,.5);
+    font-family: Arial, sans-serif; font-weight: 700; line-height: 1;
+  }
+  .mcard .r, .mcard .pip { position: absolute; line-height: 1; }
+  .mcard.md { width: 17px; height: 24px; }
+  .mcard.md .r { top: 1px; left: 2px; font-size: 9px; }
+  .mcard.md .pip { bottom: 1px; right: 2px; font-size: 8px; }
+  .mcard.sm { width: 16px; height: 22px; }
+  .mcard.sm .r { top: 1px; left: 2px; font-size: 8px; }
+  .mcard.sm .pip { bottom: 1px; right: 2px; font-size: 7px; }
+  .mcard.lg { width: 28px; height: 39px; border-radius: 3px; }
+  .mcard.lg .r { top: 2px; left: 3px; font-size: 13px; }
+  .mcard.lg .pip { bottom: 2px; right: 3px; font-size: 12px; }
+  .mcard.back { background: url('pic/tex_card_back@v1.png') center / 100% 100% no-repeat, #23405c; }
+  .mcards { display: inline-flex; gap: 2px; flex: none; }
+  .mcard .mk-s { color: #111; }
+  .mcard .mk-h { color: #d32f2f; }
+  .mcard .mk-d { color: #2f7fd6; }
+  .mcard .mk-c { color: #1f9d55; }
+
+  /* ---- L0 街道标题：全宽 · 零缩进 · 15px 加粗 + 4px 金边 ---- */
+  #log .lg2.ln-street {
+    display: flex; align-items: center; gap: 10px; font-weight: normal;
+    margin: 8px 0 0; padding: 7px 10px;
+    background: linear-gradient(90deg, rgba(255,213,74,.16), rgba(255,213,74,.02));
+    border-left: 4px solid #ffd54a; border-bottom: 1px solid rgba(255,213,74,.12);
+  }
+  #log .lg2.ln-street .nm { color: #ffd54a; font-weight: bold; font-size: 15px; letter-spacing: 3px; }
+  #log .lg2.ln-street .cm { margin-left: auto; display: inline-flex; gap: 2px; }
+  #log .lg2.ln-street .cnt {
+    font-size: 10px; color: #66788f; border: 1px solid #2a3f63; border-radius: 10px; padding: 1px 7px;
+  }
+
+  /* ---- L1 动作行：12px 缩进 ---- */
+  #log .lg2.ln-player {
+    display: flex; align-items: center; gap: 7px; font-weight: normal; color: #cfe0f5;
+    margin-top: 0; padding: 6px 10px 6px calc(var(--ind-act) + 2px);
+  }
+  #log .lg2.ln-player .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  #log .lg2.ln-player .who {
+    width: 62px; flex: none; display: flex; flex-direction: column; line-height: 1.25; overflow: hidden;
+  }
+  #log .lg2.ln-player .who b {
+    font-size: 12px; font-weight: normal; color: #8fa0b8;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #log .lg2.ln-player .who i { font-style: normal; font-size: 9px; color: #66788f; }
+  #log .lg2.ln-player.mine {
+    background: rgba(255,213,74,.055); box-shadow: inset 3px 0 0 #ffd54a;
+    padding-left: calc(var(--ind-act) + 5px);
+  }
+  #log .lg2.ln-player.mine .who b { color: #ffd54a; }
+  .lg-pill {
+    flex: none; font-size: 11px; color: #fff; border-radius: 20px;
+    padding: 2px 9px; font-weight: bold; letter-spacing: 1px; white-space: nowrap;
+  }
+  .lg-pill.fold  { background: #d0453e; }
+  .lg-pill.call  { background: #1f9d55; }
+  .lg-pill.raise { background: #378add; }
+  .lg-pill.allin { background: #a87724; }
+  .lg-pill.check { background: transparent; border: 1px solid #66788f; color: #9db2cc; }
+  #log .lg2.ln-player .amt {
+    margin-left: auto; font-family: Consolas, "Courier New", monospace;
+    font-weight: bold; font-size: 13px; white-space: nowrap;
+  }
+  #log .lg2.ln-player .amt.na { color: #66788f; font-weight: normal; }
+  .lg-verdict {
+    flex: none; font-size: 10px; font-weight: bold; border-radius: 4px;
+    padding: 1px 6px; letter-spacing: 1px; white-space: nowrap;
+  }
+  .lg-verdict.ok   { color: #35c98a; background: rgba(31,157,85,.14);  border: 1px solid rgba(31,157,85,.45); }
+  .lg-verdict.warn { color: #e8c66a; background: rgba(224,168,46,.13); border: 1px solid rgba(224,168,46,.5); }
+  .lg-verdict.bad  { color: #ef8a80; background: rgba(196,69,58,.15);  border: 1px solid rgba(196,69,58,.55); }
+
+  /* ---- L1 手牌行（开局亮牌 / allin 提前亮牌）：who + 手牌标签 + md 迷你牌 ---- */
+  #log .lg2.ln-hole {
+    display: flex; align-items: center; gap: 7px; font-weight: normal; color: #cfe0f5;
+    margin: 0; padding: 4px 10px 4px calc(var(--ind-act) + 2px);
+  }
+  #log .lg2.ln-hole .who {
+    width: 62px; flex: none; display: flex; flex-direction: column; line-height: 1.25; overflow: hidden;
+  }
+  #log .lg2.ln-hole .who b {
+    font-size: 12px; font-weight: normal; color: #8fa0b8;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #log .lg2.ln-hole .who i { font-style: normal; font-size: 9px; color: #66788f; }
+  #log .lg2.ln-hole .hlab { font-size: 10px; color: #66788f; flex: none; }
+  #log .lg2.ln-hole .note { margin-left: auto; font-size: 10px; color: #66788f; white-space: nowrap; }
+  #log .lg2.ln-hole.mine { background: rgba(255,213,74,.055); box-shadow: inset 3px 0 0 #ffd54a; }
+
+  /* ---- L2 GTO 建议：40px 缩进（连续 opt 行拼成整块） ---- */
+  #log .lg2.ln-gto, #log .lg2.ln-gto2, #log .lg2.ln-opt, #log .lg2.ln-chosen {
+    margin: 0 10px 0 var(--ind-gto); padding: 0;
+    background: rgba(74,124,158,.13); border-left: 3px solid #4a7c9e;
+    color: #cfe0ee; font-weight: normal;
+  }
+  #log .lg2.ln-gto   { padding: 5px 9px 0; border-radius: 4px 4px 0 0; font-weight: bold; }
+  #log .lg2.ln-chosen, #log .lg2.ln-opt, #log .lg2.ln-gto2 { padding: 0 9px; }
+  #log .lg2.ln-opt { color: #71889f; }
+  #log .lg2.ln-chosen { color: #ffd54a; }
+  #log .lg2.gto-last { padding-bottom: 5px; border-radius: 0 0 4px 4px; }
+  .lg-freq {
+    display: flex; height: 14px; border-radius: 4px; overflow: hidden;
+    margin: 3px 0 4px; background: rgba(255,255,255,.07);
+  }
+  .lg-freq i {
+    display: flex; align-items: center; justify-content: center;
+    font-style: normal; font-size: 9px; font-weight: bold; color: #fff;
+    letter-spacing: .5px; white-space: nowrap; overflow: hidden;
+  }
+  .lg-freq .s-bet   { background: #378add; }
+  .lg-freq .s-bet2  { background: #2f6fb0; }
+  .lg-freq .s-call  { background: #1f9d55; }
+  .lg-freq .s-check { background: #2E9E6B; }
+  .lg-freq .s-fold  { background: #d0453e; }
+  .lg-opt { display: flex; align-items: center; gap: 5px; padding: 3px 0; }
+  .lg-opt + .lg-opt { border-top: 1px dashed rgba(42,58,88,.7); }
+  .lg-opt .tx { color: #cfe0ee; font-size: 12px; font-weight: bold; }
+  .lg-opt .tx .num { font-family: Consolas, "Courier New", monospace; }
+  .lg-opt .tx.gt { color: #7fb3d5; font-size: 10px; letter-spacing: 1px; }
+  #log .lg2.gto-first { padding-top: 5px; border-radius: 4px 4px 0 0; }
+  .lg-opt .fq {
+    margin-left: auto; font-family: Consolas, "Courier New", monospace;
+    color: #7fb3d5; font-size: 11px; white-space: nowrap;
+  }
+  .lg-opt .fq em { font-style: normal; font-size: 9.5px; color: #5d8bab; margin-right: 3px; }
+  .lg-picked {
+    flex: none; font-size: 9px; color: #ffd54a; border: 1px solid rgba(255,213,74,.4);
+    border-radius: 8px; padding: 0 5px; margin-left: 6px; letter-spacing: 1px;
+  }
+  .lg-potchip {
+    display: inline-flex; align-items: center; border: 1px solid rgba(143,160,184,.32);
+    color: #a4b6ca; border-radius: 10px; padding: 0 6px; font-size: 10px;
+    font-family: Consolas, "Courier New", monospace; white-space: nowrap;
+    margin-left: 5px; background: rgba(143,160,184,.06);
+  }
+  .lg-potchip b { color: #c2d2e2; }
+
+  /* ---- 结算底池条 ---- */
+  #log .lg2.ln-win {
+    display: flex; align-items: center; gap: 8px; margin: 6px 0 0; padding: 9px 10px;
+    background: #16233a; border-top: 2px solid #a87724; color: #8fa0b8;
+    font-size: 11px; line-height: 1.4;
+  }
+  #log .lg2.ln-win .wn b { color: #e8eef5; }
+  #log .lg2.ln-win .pv {
+    margin-left: auto; font-family: Consolas, "Courier New", monospace;
+    font-size: 16px; font-weight: bold; color: #ffd54a; white-space: nowrap;
+  }
+  #log .lg2.ln-win .pv small { font-size: 11px; color: #8fa0b8; font-weight: normal; }
+
+  #action-bar {
+    grid-area: 2 / 1 / 3 / 3; background: #0e1826; border-top: 1px solid #22314a;
+    display: flex; align-items: center; gap: 18px; padding: 0 24px;
+  }
+  /* 底部信息条（手牌/昵称/局数）已移除：与侧栏 #hand-hint 及自己座位的名字牌重复，
+     手机端可省出一整行高度给主按钮 */
+  #raise-panel { flex: 1; max-width: 460px; }
+  #raise-panel .row { display: flex; gap: 6px; margin-top: 6px; }
+  #raise-slider { width: 100%; accent-color: #ffd54a; }
+  #raise-value { color: #ffd54a; font-weight: bold; min-width: 90px; display: inline-block; }
+  .btn {
+    background: #24344d; color: #e8eef5; border: 1px solid #3a5070; border-radius: 8px;
+    padding: 8px 14px; font-size: 14px; cursor: pointer; font-family: inherit;
+  }
+  .btn:hover:not(:disabled) { background: #31466a; }
+  /* 禁用态：保持可读（不作为行动提示）而不是几乎隐形 */
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn.primary { background: #1d7a50; border-color: #2ba06a; }
+  .btn.primary:hover:not(:disabled) { background: #24935f; }
+  .btn.danger { background: #8e3038; border-color: #b0454e; }
+  .btn.danger:hover:not(:disabled) { background: #a53a44; }
+  .btn.warn { background: #8a6413; border-color: #b08620; }
+  .btn.mini { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+  #main-buttons { display: flex; gap: 10px; }
+  #main-buttons .btn { padding: 12px 22px; font-size: 16px; min-width: 110px; }
+  /* 横屏紧凑模式下的"加注…"入口（默认隐藏，仅在横屏媒体查询中显示） */
+  #btn-raise-more { display: none; }
+  #action-bar.disabled .btn { opacity: .55; pointer-events: none; }
+  /* 预操作：未轮到自己时可预先点亮"弃牌/跟注"，轮到后自动执行（再点一次取消）。
+     关键：必须让按钮"可点"才谈得上预选 —— 只给 .pre-on 开 pointer-events 会死锁：
+     未预选的按钮 pointer-events:none → 第一次点击根本到不了按钮 → 永远进不了 .pre-on，
+     预选择功能形同消失（2026-10-13 修复）。仅"弃牌/跟注"可预选，"加注"保持不可点。 */
+  #action-bar.pre-armed #btn-fold,
+  #action-bar.pre-armed #btn-check { pointer-events: auto; opacity: .8; }
+  /* 预操作高亮：不显示任何文字提示，只让按钮"亮起"（提亮 + 描边 + 辉光） */
+  #action-bar.pre-armed .btn.pre-on {
+    pointer-events: auto !important; opacity: 1 !important;
+    filter: brightness(1.3);
+    outline: 2px solid #7ec8ff; outline-offset: 1px;
+    box-shadow: 0 0 10px rgba(126, 200, 255, .55);
+  }
+  #action-bar.pre-armed #btn-fold.pre-on { outline-color: #ff8f8f; box-shadow: 0 0 10px rgba(255, 143, 143, .5); }
+  /* 等待他人行动时：明确的状态提示（替代"一排灰按钮"的含混表达） */
+  #wait-hint {
+    display: none; align-items: center; gap: 6px; margin-left: 4px;
+    font-size: 13px; color: #ffcf7a; font-weight: bold; white-space: nowrap;
+  }
+  #wait-hint.show { display: inline-flex; }
+
+  #overlay {
+    position: fixed; inset: 0; background: rgba(5, 10, 18, .82); z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #overlay.hidden { display: none; }
+  /* 大厅叠在进行中的对局之上：背景对局暂停渲染，遮罩加深以示"非活动" */
+  #overlay.over-game { background: rgba(5, 10, 18, .93); }
+  #overlay-box {
+    background: #131f30; border: 1px solid #2a3f63; border-radius: 16px;
+    padding: 28px 36px; max-width: 560px; text-align: center;
+    max-height: 92vh; overflow-y: auto;
+  }
+  #overlay-box h1 { font-size: 24px; margin-bottom: 14px; color: #ffd54a; }
+  #overlay-box p { font-size: 14px; line-height: 1.8; color: #b9c8dd; margin-bottom: 8px; text-align: left; }
+  #overlay-results { text-align: left; margin: 10px 0 14px; font-size: 14px; line-height: 1.9; }
+  #overlay-results .win { color: #43d17c; font-weight: bold; }
+
+  /* ---------- 大厅 / 联机 ---------- */
+  #lobby-select .intro { text-align: left; }
+  .mp-form { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .mp-form .row { display: flex; gap: 8px; justify-content: center; }
+  .mp-form .nick-row { align-items: center; }
+  .mp-label { flex: none; color: #cfe0f5; font-size: 15px; font-weight: bold; }
+  .mp-form input {
+    background: #0e1826; border: 1px solid #2a3f63; color: #e8eef5; border-radius: 8px;
+    padding: 9px 12px; font-size: 14px; font-family: inherit; outline: none; width: 150px;
+  }
+  .mp-form input:focus { border-color: #3f5c8f; }
+  .mp-tip { font-size: 12px !important; color: #71889f !important; text-align: center !important; margin-top: 6px !important; }
+
+  /* ============================================================
+     主菜单面板 v2（内容三分离：标题 / 参数胶囊 / 模式卡片）
+     原面板把玩家操作、游戏参数、开发者信息混在一层 —— 按受众拆开
+     ============================================================ */
+  #lobby-select { text-align: left; }
+  .ms-head {
+    border-radius: 12px; padding: 13px 15px 12px;
+    background: linear-gradient(135deg, rgba(255,213,74,.12), rgba(255,213,74,.02));
+    border: 1px solid rgba(255,213,74,.18);
+  }
+  .ms-head .st { font-size: 11.5px; color: #8fa0b8; }
+  .ms-chips { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+  .ms-chip {
+    font-size: 10.5px; color: #8fa0b8; background: #1b2a42; border: 1px solid #2a3f63;
+    border-radius: 20px; padding: 2px 9px; font-family: Consolas, "Courier New", monospace;
+    white-space: nowrap;
+  }
+  .ms-chip b { color: #e8eef5; }
+  .ms-nick { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .ms-nick .lbl { color: #8fa0b8; font-size: 12px; flex: none; }
+  #nick-input {
+    flex: 1; min-width: 0; background: #1b2a42; border: 1px solid #2a3f63; border-radius: 8px;
+    color: #e8eef5; padding: 7px 10px; font-size: 13px; font-family: inherit; outline: none;
+  }
+  #nick-input:focus { border-color: #3f5c8f; }
+  .ms-grp { margin-top: 15px; }
+  .ms-gt { color: #66788f; font-size: 10.5px; letter-spacing: 2px; margin-bottom: 7px; }
+  .ms-mode {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    background: #1b2a42; border: 1px solid #2a3f63; border-radius: 10px;
+    padding: 10px 13px; margin-bottom: 8px; cursor: pointer;
+    font-family: inherit; font-size: 13px; color: #e8eef5;
+  }
+  .ms-mode:hover { border-color: #3f5c8f; background: #22345a; }
+  .ms-mode .ic {
+    flex: none; width: 30px; height: 30px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; background: rgba(255,255,255,.05);
+  }
+  .ms-mode .mt { flex: 1; min-width: 0; line-height: 1.35; }
+  .ms-mode .mt b { font-size: 13.5px; font-weight: bold; display: block; }
+  .ms-mode .mt em { font-style: normal; font-size: 10.5px; color: #8fa0b8; }
+  .ms-mode .arr { margin-left: auto; color: #66788f; font-size: 15px; flex: none; }
+  /* 视觉主次：单机游戏为推荐入口（绿边渐变），其余次级 */
+  .ms-mode.primary {
+    border-color: rgba(31,157,85,.65);
+    background: linear-gradient(135deg, rgba(31,157,85,.16), #1b2a42);
+  }
+  .ms-mode.primary .mt b { color: #4ade97; }
+  .ms-mode.primary .arr { color: #4ade97; }
+  .ms-mode.primary:hover { border-color: rgba(31,157,85,.9); }
+  .ms-join { display: flex; gap: 8px; margin-bottom: 8px; }
+  #room-input {
+    flex: 1; min-width: 0; background: #1b2a42; border: 1px solid #2a3f63; border-radius: 10px;
+    color: #e8eef5; padding: 9px 12px; font-size: 13px; font-family: inherit; outline: none;
+  }
+  #room-input:focus { border-color: #3f5c8f; }
+  .ms-jbtn {
+    flex: none; width: 108px; background: #378add; border: 1px solid #378add; border-radius: 10px;
+    color: #fff; font-weight: bold; font-size: 13px; font-family: inherit; cursor: pointer;
+  }
+  .ms-jbtn:hover:not(:disabled) { background: #4a95e0; }
+  .ms-jbtn:disabled { opacity: .6; cursor: not-allowed; }
+  .ms-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+  .ms-foot .hint { color: #66788f; font-size: 10.5px; }
+  .ms-foot .help { color: #7fb3d5; font-size: 11px; cursor: pointer; flex: none; }
+  .ms-foot .help:hover { text-decoration: underline; }
+  /* 联机启动说明弹窗（开发者信息从主菜单移到这里） */
+  #nethelp-modal .nb-item { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
+  #nethelp-modal .nb-item + .nb-item { border-top: 1px dashed rgba(42,58,88,.7); }
+  #nethelp-modal .nb-no {
+    flex: none; width: 18px; height: 18px; border-radius: 50%; margin-top: 1px;
+    background: #1b2a42; border: 1px solid #2a3f63; color: #ffd54a;
+    font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;
+  }
+  #nethelp-modal .nb-tx { font-size: 12px; line-height: 1.6; color: #cfe0f5; text-align: left; }
+  #nethelp-modal .nb-tx em { font-style: normal; color: #8fa0b8; font-size: 11px; }
+  #nethelp-modal code {
+    font-family: Consolas, "Courier New", monospace; font-size: 11.5px; color: #ffd54a;
+    background: #0e1826; border: 1px solid #2a3f63; border-radius: 5px; padding: 1px 5px;
+  }
+  .room-code {
+    background: #0e1826; border: 1px solid rgba(255,215,90,.45); border-radius: 12px;
+    display: inline-block; padding: 8px 26px; margin-bottom: 14px; font-size: 15px; color: #b9c8dd;
+  }
+  .room-code b { font-size: 30px; color: #ffd54a; letter-spacing: 8px; margin-left: 8px; font-family: Consolas, monospace; }
+  #host-seats, #client-seats { text-align: left; margin: 10px auto 14px; max-width: 340px; }
+  .lobby-seat {
+    display: flex; align-items: center; gap: 8px;
+    background: #0e1826; border: 1px solid #22314a; border-radius: 8px;
+    padding: 6px 12px; margin-bottom: 5px; font-size: 13px;
+  }
+  .lobby-seat .seat-no { color: #71889f; width: 44px; flex: none; }
+  .lobby-seat .seat-name { flex: 1; font-weight: bold; }
+  .lobby-seat .seat-type { color: #8fb3d9; font-size: 12px; }
+  .lobby-seat.empty { opacity: .45; }
+  .lobby-seat .btn.mini { flex: none; }
+  .lobby-warn { color: #ffcf7a; font-size: 12px; min-height: 16px; }
+
+  /* ---------- 玩家行为数据弹窗（VPIP / PFR / 3bet） ---------- */
+  #stat-popup {
+    position: absolute; transform: translate(-50%, -50%);
+    background: rgba(8, 16, 24, .96); border: 1px solid #2a3f63; border-radius: 10px;
+    padding: 7px 12px; z-index: 30; display: none; text-align: left; min-width: 148px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.6); cursor: default;
+  }
+  #stat-popup.show { display: block; }
+  #stat-popup .sp-name { font-size: 12px; color: #7ec8ff; font-weight: bold; margin-bottom: 3px; text-align: center; }
+  #stat-popup .sp-row { font-size: 11.5px; color: #cfe0f5; line-height: 1.7; display: flex; justify-content: space-between; gap: 14px; }
+  #stat-popup .sp-row b { color: #ffd54a; }
+  /* ---------- 弃牌保留手牌（灰态）与秀牌眼睛图标 ---------- */
+  .seat .hole-cards.grayed .card { filter: grayscale(1); opacity: .4; }
+  /* 秀牌（主动亮出 / 已翻开）不参与灰化与半透明——亮牌后应显示常规牌面
+     （.shown 由渲染逻辑加在已秀出的那张牌上，覆盖父级 .grayed 的降透明度） */
+  .seat .hole-cards .card.shown {
+    filter: none !important; opacity: 1 !important;
+  }
+  /* 秀牌待生效时（本手进行中点了眼睛）：略微描边提示"已标记待亮" */
+  .card.showing { box-shadow: 0 0 0 2px rgba(255, 213, 74, .75); }
+  .card { position: relative; -webkit-touch-callout: none; }
+  .card .show-eye {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font-size: 15px; line-height: 1; pointer-events: none;
+    background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.35); border-radius: 50%;
+    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  }
+  .card.md .show-eye, .card.sm .show-eye { width: 20px; height: 20px; font-size: 12px; }
+  .card.lg .show-eye { width: 26px; height: 26px; font-size: 16px; }
+
+  /* ---------- 翻前训练结算 ---------- */
+  #train-summary { font-size: 14px; color: #b9c8dd; margin-bottom: 8px; line-height: 1.7; }
+  #train-summary b { color: #7ec8ff; }
+  #train-actions {
+    background: #0e1826; border: 1px solid #22314a; border-radius: 10px;
+    padding: 12px 16px; margin: 4px 0 10px; text-align: left;
+  }
+  .train-line { font-size: 14px; line-height: 1.9; color: #e8eef5; }
+  .train-line .ev-best { color: #43d17c; font-weight: bold; }
+  .train-line .ev-ok { color: #ffd54a; }
+  .train-line .ev-bad { color: #ff8080; font-weight: bold; }
+  .train-block { padding: 3px 0; }
+  .train-block + .train-block { border-top: 1px dashed #1c2a40; margin-top: 6px; padding-top: 8px; }
+  .train-sub { font-size: 12.5px; line-height: 1.9; color: #7f9cc0; padding-left: 20px; }
+  .train-sub.na { color: #d99090; }
+
+  /* ---------- 主机大厅：手机扫码加入 ---------- */
+  #host-qr { display: none; align-items: center; gap: 14px; margin: 4px auto 12px; max-width: 380px; text-align: left; }
+  #host-qr.show { display: flex; }
+  #qr-canvas { width: 124px; height: 124px; border-radius: 8px; flex: none; background: #fff; }
+  .qr-side { flex: 1; min-width: 0; }
+  .qr-title { font-weight: bold; color: #7ec8ff; font-size: 14px; margin-bottom: 4px; }
+  .qr-url { font-family: Consolas, monospace; color: #ffd54a; font-size: 13px; word-break: break-all; margin-bottom: 4px; }
+  #host-qr .mp-tip { text-align: left !important; margin-top: 0 !important; }
+
+  /* ---------- 手机端适配 ---------- */
+  html { -webkit-text-size-adjust: 100%; }
+  body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  @media (max-width: 820px) {
+    #app { grid-template-rows: 1fr auto; }
+    /* iPhone 灵动岛/刘海：牌桌区整体下移，顶部按钮避开安全区 */
+    #table-area { padding-top: calc(env(safe-area-inset-top, 0px) + 4px); }
+    #tl-buttons { top: calc(env(safe-area-inset-top, 0px) + 8px); }
+    #menu-toggle, #menu-list button { padding: 5px 10px; font-size: 12px; min-width: 118px; }
+    /* 大厅座位行：超能力选择在窄屏可换行，避免挤压 */
+    .lobby-seat { flex-wrap: wrap; }
+    .lobby-seat .seat-name { min-width: 56px; }
+    .power-pick button { padding: 2px 6px; font-size: 11px; }
+    #side-panel { top: calc(env(safe-area-inset-top, 0px) + 46px); }
+    /* 桌面按视口自适应：宽、高双向约束，避免小屏溢出。
+       可用高 = 100dvh − 实测行动条高 − 顶部安全区 − 76px
+       （顶部/底部座位外扩 + 手牌完整显示 ~48px + #table-area 自身 4px padding-top + 呼吸）；
+       旧公式里扣的 240px 同样是硬编码猜测，与实际行动条高度无关 */
+    #table {
+      width: min(780px, 96%, calc((100dvh - var(--action-bar-h) - env(safe-area-inset-top, 0px) - 76px) * 780 / 460));
+      height: auto; aspect-ratio: 780 / 460; border-width: 8px;
+    }
+    #table-inner { inset: 10px; }
+    #center-info { width: 92%; }
+    #pot-display { font-size: 12px; padding: 2px 12px; margin-bottom: 5px; }
+    #board { min-height: 44px; gap: 5px; }
+    #board .card-slot { width: 34px; height: 48px; }
+    #table-msg { font-size: 11px; margin-top: 6px; min-height: 14px; }
+    .card.md, .card.sm { width: 32px; height: 46px; font-size: 13px; }
+    .card.lg { width: 40px; height: 56px; font-size: 16px; }
+    .seat { width: 104px; }
+    .seat .hole-cards { min-height: 46px; gap: 3px; }
+    .seat .info { min-width: 78px; padding: 3px 5px; border-radius: 8px; }
+    .seat .info .name { font-size: 11px; }
+    .seat .info .chips { font-size: 11px; }
+    .seat .seat-badges { top: -6px; right: 10px; gap: 2px; }
+    .seat .pos-badge { width: 16px; height: 16px; font-size: 10px; }
+    .seat .think { font-size: 10px; min-height: 12px; }
+    /* 行动区：第一行 主按钮，第二行 加注面板（底部信息条已移除） */
+    #action-bar { flex-wrap: wrap; gap: 6px 10px; padding: 8px 10px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+    /* 右下角悬浮设置按钮会压住第二行"快捷下注"最右侧按钮 → 整行右侧留出避让空间 */
+    #raise-panel { padding-right: 0; }
+    #quick-row { padding-right: 62px; box-sizing: border-box; }
+    #main-buttons { order: 2; flex-basis: 100%; justify-content: center; gap: 8px; }
+    #main-buttons .btn { padding: 12px 8px; font-size: 15px; min-width: 0; flex: 1; }
+    #raise-panel { order: 3; flex-basis: 100%; max-width: none; }
+    #raise-panel .row { gap: 8px; }
+    /* 底池比例/大盲档快捷按钮放大 */
+    #quick-row .btn { padding: 9px 6px; font-size: 14px; flex: 1; min-width: 0; border-radius: 8px; }
+    /* 弹窗与面板 */
+    #side-panel { width: min(88vw, 340px); top: 42px; }
+    .modal-box { min-width: 0; width: 92vw; padding: 18px 14px; }
+    #overlay-box { max-width: 92vw; width: 92vw; padding: 20px 14px; }
+    .mp-form input { width: min(150px, 42vw); }
+    .room-code b { font-size: 24px; letter-spacing: 6px; }
+    #host-qr { flex-wrap: wrap; }
+    #btn-mp-start, #btn-start { font-size: 15px !important; padding: 10px 20px !important; }
+  }
+  /* 手机竖屏/窄屏：行动条换行后更高，聊天与设置按钮需抬到其上方，否则会压住主按钮。
+     聊天按钮默认位从左下改为右下（设置按钮上方）：左下正好压住自己的手牌；
+     已拖动过的玩家走 localStorage 记忆的任意位置，不受此默认值影响 */
+  @media (max-width: 820px) and (orientation: portrait) {
+    :root { --action-bar-h: 200px; }
+    #chat-toggle, #settings-fab { width: 46px; height: 46px; }
+    #chat-toggle svg, #settings-fab svg { width: 23px; height: 23px; }
+    #chat-toggle {
+      left: auto; right: 12px;
+      bottom: calc(var(--action-bar-h) + 72px + env(safe-area-inset-bottom, 0px));
+    }
+  }
+  /* 竖屏手机进一步收紧座位 */
+  @media (max-width: 480px) and (orientation: portrait) {
+    .seat { width: 88px; }
+    .seat .info .name, .seat .info .chips { font-size: 10px; }
+    .seat .info { min-width: 66px; padding: 2px 4px; }
+    #main-buttons .btn { font-size: 14px; padding: 11px 4px; }
+  }
+  /* 竖屏：椭圆牌桌旋转90°成竖向（体育场形，上下圆弧、两侧平直），
+     高度基本占满操作区上方空间并垂直居中（上下空余大致相等）；
+     座位百分比坐标位于椭圆边缘，纵横互换后依然贴合桌边，无需改动 */
+  @media (max-width: 820px) and (orientation: portrait) {
+    #table-area { align-items: center; }
+    #table {
+      /* 横向占满两侧（上限 94%）与竖向占满可用空间，两者取小 —— 真正双约束。
+         可用高 = 100dvh − 实测行动条高 − 顶部安全区 − 108px
+         （顶部/底部座位外扩 + 手牌完整显示 + #table-area 自身 4px padding-top + 呼吸余量；
+         108px 由实测反推：牌桌居中后顶部留白 =(PAD−4)/2，需 ≥ 座位半高 53.5 + 座位外扩
+         + 顶部安全区 − 容器 padding，108 时顶部手牌离开安全区约 10px、底部名字牌离开
+         行动条约 6px。92px 那一版在桌面 Chromium 里测不出来 —— 桌面 env(safe-area-inset-top)
+         恒为 0，真机 iOS（灵动岛 59px）顶部手牌会被盖住 4.6px，2026-10-13 修复）。
+
+         旧公式 min(94%, (100dvh − 330px) × 0.66) 有两个毛病：
+         ① 330px 是硬编码猜测，而行动条在手机上实测只有 111~183px（见 syncActionBarH）
+            → 虚扣两百多像素，牌桌只用了可用高的 ~66%，上下白浪费；
+         ② 宽度项 94% 在手机上从不生效（高度项永远更小），牌桌宽完全由"屏幕高度"决定
+            → 同一款手机越高牌桌越大、与宽度无关。iOS 与安卓的可视高度天然不同
+            （Safari 工具栏常驻 vs Chrome 地址栏收起），实测座位/牌桌占比在
+            22%~40% 之间摆动 —— 这就是"iOS 正常、换安卓就不舒服"的根因。
+         改用真实值后，牌桌宽 = min(94% 屏宽, 可用高 × 460/700)，跨设备极差压到 ~19%
+         （剩下的差异来自 360~430 的屏宽本身，属合理范围）。
+         椭圆纵横比 460/700，两侧座位已内收（SEAT_POS 6%/94%），不会被屏幕裁切 */
+      width: min(94%, calc((100dvh - var(--action-bar-h) - env(safe-area-inset-top, 0px) - 108px) * 460 / 700));
+      aspect-ratio: 460 / 700;
+      border-radius: 999px; /* 自动钳制为宽的一半 → 竖向体育场形 */
+    }
+    #table-inner { inset: 10px; border-radius: 999px; }
+  }
+  /* 手机横屏（844/896/915px 宽，超过上面的 820px 断点）：
+     套用桌面布局时牌桌固定 460px 高会把行动条挤出视口 → 对局无法操作。
+     此处强制牌桌高度受"视口 − 顶部安全区 − 行动条预留高度"约束，并把行动条压成单行
+     （隐藏加注滑杆行，用"加注…"按钮就地展开，避免横屏高度不足时无法操作）。 */
+  @media (max-width: 1000px) and (orientation: landscape) and (max-height: 560px) {
+    :root { --action-bar-h: 62px; }
+    #app { grid-template-rows: 1fr auto; }
+    #table-area { padding-top: calc(env(safe-area-inset-top, 0px) + 2px); }
+    #tl-buttons { top: calc(env(safe-area-inset-top, 0px) + 6px); }
+    #menu-toggle, #menu-list button { padding: 5px 10px; font-size: 12px; min-width: 112px; }
+    /* 牌桌：宽高双向受约束，保持 780/460 比例。
+       可用高 = 100dvh − 实测行动条高（横屏压成单行，实测 ~53px）− 顶部安全区 − 76px
+       （顶部/底部座位外扩 + 手牌完整显示 ~48px、#table-area 自身 2px padding-top、呼吸余量）；
+       旧公式扣的 176px 同样是猜测值，与实际单行行动条高度无关 */
+    #table {
+      width: min(96%, calc((100dvh - var(--action-bar-h) - env(safe-area-inset-top, 0px) - 76px) * 780 / 460));
+      height: auto; aspect-ratio: 780 / 460; border-width: 8px;
+    }
+    #table-inner { inset: 10px; }
+    #center-info { width: 88%; }
+    #pot-display { font-size: 12px; padding: 2px 12px; margin-bottom: 4px; }
+    #board { min-height: 42px; gap: 5px; }
+    #board .card-slot { width: 32px; height: 45px; }
+    #table-msg { font-size: 11px; margin-top: 5px; min-height: 13px; }
+    .card.md, .card.sm { width: 30px; height: 43px; font-size: 12.5px; }
+    .card.lg { width: 38px; height: 54px; font-size: 15px; }
+    .seat { width: 96px; }
+    .seat .hole-cards { min-height: 42px; gap: 3px; }
+    .seat .info { min-width: 74px; padding: 3px 5px; border-radius: 8px; }
+    .seat .info .name, .seat .info .chips { font-size: 11px; }
+    .seat .seat-badges { top: -6px; right: 10px; gap: 2px; }
+    .seat .pos-badge { width: 16px; height: 16px; font-size: 10px; }
+    .seat .think { font-size: 10px; min-height: 12px; }
+    /* 行动条压成单行：主按钮 | 加注入口 */
+    #action-bar { flex-wrap: nowrap; gap: 10px; padding: 6px 10px; padding-right: 66px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
+    #main-buttons { order: 0; flex: 1; justify-content: center; gap: 8px; }
+    #main-buttons .btn { padding: 10px 10px; font-size: 14px; min-width: 0; flex: 1; }
+    /* 加注面板默认收起（点击"加注…"临时占据行动条上方浮层） */
+    #raise-panel { display: none; }
+    body.raise-open #raise-panel {
+      display: block; position: fixed; left: 10px; right: 10px;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 56px);
+      background: rgba(13, 21, 34, .98); border: 1px solid var(--line);
+      border-radius: 10px; padding: 10px 12px; z-index: 58; max-width: none;
+      box-shadow: 0 6px 22px rgba(0,0,0,.6);
+    }
+    #quick-row .btn { padding: 7px 6px; font-size: 13px; flex: 1; min-width: 0; border-radius: 8px; }
+    #btn-raise-more { display: inline-block !important; }
+    /* 横屏单行行动条：右下角设置按钮已移到行动条上方（padding-right 避让不再需要） */
+    #action-bar { padding-right: 10px; }
+    #side-panel { width: min(76vw, 340px); top: calc(env(safe-area-inset-top, 0px) + 44px); bottom: 76px; }
+    .modal-box { min-width: 0; width: min(72vw, 420px); padding: 16px 14px; max-height: 92dvh; overflow-y: auto; }
+    #overlay-box { max-width: min(78vw, 480px); width: auto; padding: 18px 16px; max-height: 94dvh; overflow-y: auto; }
+  }
+
+  body { background: #0b1220; margin: 0; padding: 22px; font-family: "Microsoft YaHei","PingFang SC",sans-serif; }
+  .wrap { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+  #side-panel { position: static; display: flex; height: 620px; }
+  .tag { color: #8fb3d9; font-size: 12px; line-height: 1.8; max-width: 250px; }
+  .tag b { color: #ffd54a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div id="side-panel" class="open">
+  <h3>对局信息</h3>
+  <div id="hand-hint">实测渲染 · 单机牌局</div>
+  <div id="log">
+<div class="ln-street">===== 第 11 局 =====</div>
+<div>河牌杀手·小盲 小盲 0.5，鲨鱼老王·大盲 大盲 1</div>
+<div class="ln-hole lg2 lg2-hole"><span class="who"><b>河牌杀手</b><i>小盲</i></span><span class="hlab">手牌</span><span class="mcards"><span class="mcard md"><span class="r mk-h">2</span><span class="pip mk-h">♥</span></span><span class="mcard md"><span class="r mk-d">2</span><span class="pip mk-d">♦</span></span></span></div>
+<div class="ln-hole lg2 lg2-hole"><span class="who"><b>鲨鱼老王</b><i>大盲</i></span><span class="hlab">手牌</span><span class="mcards"><span class="mcard md"><span class="r mk-d">9</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-s">K</span><span class="pip mk-s">♠</span></span></span></div>
+<div class="ln-hole lg2 lg2-hole"><span class="who"><b>冷面阿杰</b><i>枪口</i></span><span class="hlab">手牌</span><span class="mcards"><span class="mcard md"><span class="r mk-c">7</span><span class="pip mk-c">♣</span></span><span class="mcard md"><span class="r mk-h">3</span><span class="pip mk-h">♥</span></span></span></div>
+<div class="ln-hole lg2 lg2-hole"><span class="who"><b>幸运小李</b><i>中位</i></span><span class="hlab">手牌</span><span class="mcards"><span class="mcard md"><span class="r mk-d">7</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-c">8</span><span class="pip mk-c">♣</span></span></span></div>
+<div class="ln-hole lg2 lg2-hole"><span class="who"><b>老狐狸</b><i>关煞</i></span><span class="hlab">手牌</span><span class="mcards"><span class="mcard md"><span class="r mk-c">3</span><span class="pip mk-c">♣</span></span><span class="mcard md"><span class="r mk-h">Q</span><span class="pip mk-h">♥</span></span></span></div>
+<div class="ln-street lg2 lg2-street"><span class="nm">翻牌前</span></div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#D4537E"></span><span class="who"><b>冷面阿杰</b><i>枪口</i></span><span class="mcards"><span class="mcard md"><span class="r mk-c">7</span><span class="pip mk-c">♣</span></span><span class="mcard md"><span class="r mk-h">3</span><span class="pip mk-h">♥</span></span></span><span class="lg-pill fold">弃牌</span><span class="amt na">—</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first gto-last"><div class="lg-freq"><i class="s-fold" style="width:100%">弃牌 100%</i></div><div class="lg-opt"><span class="tx">弃牌</span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#BA7517"></span><span class="who"><b>幸运小李</b><i>中位</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">7</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-c">8</span><span class="pip mk-c">♣</span></span></span><span class="lg-pill fold">弃牌</span><span class="amt na">—</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first gto-last"><div class="lg-freq"><i class="s-fold" style="width:100%">弃牌 100%</i></div><div class="lg-opt"><span class="tx">弃牌</span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#5F5E5A"></span><span class="who"><b>老狐狸</b><i>关煞</i></span><span class="mcards"><span class="mcard md"><span class="r mk-c">3</span><span class="pip mk-c">♣</span></span><span class="mcard md"><span class="r mk-h">Q</span><span class="pip mk-h">♥</span></span></span><span class="lg-pill fold">弃牌</span><span class="amt na">—</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first gto-last"><div class="lg-freq"><i class="s-fold" style="width:100%">弃牌 100%</i></div><div class="lg-opt"><span class="tx">弃牌</span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-act">你（玩家）·按钮 （预操作）跟注1</div>
+<div class="ln-player lg2 lg2-act mine"><span class="dot" style="background:#378ADD"></span><span class="who"><b>你（玩家）</b><i>按钮</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">A</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-d">4</span><span class="pip mk-d">♦</span></span></span><span class="lg-pill call">跟注</span><span class="amt">1</span><span class="lg-verdict bad">✗ 偏离</span></div>
+<div class="ln-gto lg2 lg2-opt"><div class="lg-opt" style="border-top:none"><span class="tx gt">GTO 建议</span></div><div class="lg-freq"><i class="s-bet" style="width:100%">加注167% 100%</i></div></div>
+<div class="ln-gto2 lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">加注至2.5</span><span class="lg-potchip">底池 <b>167%</b></span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-act">跟注1</div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#534AB7"></span><span class="who"><b>河牌杀手</b><i>小盲</i></span><span class="mcards"><span class="mcard md"><span class="r mk-h">2</span><span class="pip mk-h">♥</span></span><span class="mcard md"><span class="r mk-d">2</span><span class="pip mk-d">♦</span></span></span><span class="lg-pill raise">加注</span><span class="amt">3.5</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first"><div class="lg-freq"><i class="s-bet" style="width:98%">加注140% 98%</i><i class="s-fold" style="width:2%">弃牌 2%</i></div><div class="lg-opt"><span class="tx">加注至3.5</span><span class="lg-potchip">底池 <b>140%</b></span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>98%</span></div></div>
+<div class="ln-opt lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">弃牌</span><span class="fq"><em>频率</em>2%</span></div></div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#1D9E75"></span><span class="who"><b>鲨鱼老王</b><i>大盲</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">9</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-s">K</span><span class="pip mk-s">♠</span></span></span><span class="lg-pill raise">加注</span><span class="amt">10.5</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first"><div class="lg-freq"><i class="s-bet" style="width:70%">加注191% 70%</i><i class="s-call" style="width:30%">跟注 30%</i></div><div class="lg-opt"><span class="tx">3bet至10.5</span><span class="lg-potchip">底池 <b>191%</b></span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>70%</span></div></div>
+<div class="ln-opt lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">跟注2.5</span><span class="fq"><em>频率</em>30%</span></div></div>
+<div class="ln-player lg2 lg2-act mine"><span class="dot" style="background:#378ADD"></span><span class="who"><b>你（玩家）</b><i>按钮</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">A</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-d">4</span><span class="pip mk-d">♦</span></span></span><span class="lg-pill call">跟注</span><span class="amt">9.5</span><span class="lg-verdict bad">✗ 偏离</span></div>
+<div class="ln-gto lg2 lg2-opt"><div class="lg-opt" style="border-top:none"><span class="tx gt">GTO 建议</span></div><div class="lg-freq"><i class="s-fold" style="width:100%">弃牌 100%</i></div></div>
+<div class="ln-gto2 lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">弃牌</span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-act">跟注9.5</div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#534AB7"></span><span class="who"><b>河牌杀手</b><i>小盲</i></span><span class="mcards"><span class="mcard md"><span class="r mk-h">2</span><span class="pip mk-h">♥</span></span><span class="mcard md"><span class="r mk-d">2</span><span class="pip mk-d">♦</span></span></span><span class="lg-pill fold">弃牌</span><span class="amt na">—</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first gto-last"><div class="lg-freq"><i class="s-fold" style="width:100%">弃牌 100%</i></div><div class="lg-opt"><span class="tx">弃牌</span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-street lg2 lg2-street"><span class="nm">翻牌</span><span class="cm"><span class="mcards"><span class="mcard sm"><span class="r mk-c">6</span><span class="pip mk-c">♣</span></span><span class="mcard sm"><span class="r mk-c">2</span><span class="pip mk-c">♣</span></span><span class="mcard sm"><span class="r mk-s">3</span><span class="pip mk-s">♠</span></span></span></span></div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#1D9E75"></span><span class="who"><b>鲨鱼老王</b><i>大盲</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">9</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-s">K</span><span class="pip mk-s">♠</span></span></span><span class="lg-pill raise">下注</span><span class="amt">7</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first"><div class="lg-freq"><i class="s-bet" style="width:53%">下注29% 53%</i><i class="s-check" style="width:47%">过牌 47%</i></div><div class="lg-opt"><span class="tx">下注7</span><span class="lg-potchip">底池 <b>29%</b></span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>53%</span></div></div>
+<div class="ln-opt lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">过牌</span><span class="fq"><em>频率</em>47%</span></div></div>
+<div class="ln-player lg2 lg2-act mine"><span class="dot" style="background:#378ADD"></span><span class="who"><b>你（玩家）</b><i>按钮</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">A</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-d">4</span><span class="pip mk-d">♦</span></span></span><span class="lg-pill call">跟注</span><span class="amt">7</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-gto lg2 lg2-opt"><div class="lg-opt" style="border-top:none"><span class="tx gt">GTO 建议</span></div><div class="lg-freq"><i class="s-bet" style="width:8%">加注113% 8%</i><i class="s-call" style="width:18%">跟注 18%</i><i class="s-fold" style="width:66%">弃牌 66%</i></div></div>
+<div class="ln-gto2 lg2 lg2-opt"><div class="lg-opt"><span class="tx">加注至35.5</span><span class="lg-potchip">底池 <b>113%</b></span><span class="fq"><em>频率</em>8%</span></div></div>
+<div class="ln-chosen lg2 lg2-opt"><div class="lg-opt"><span class="tx">跟注7</span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>18%</span></div></div>
+<div class="ln-gto2 lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">弃牌</span><span class="fq"><em>频率</em>66%</span></div></div>
+<div class="ln-street lg2 lg2-street"><span class="nm">转牌</span><span class="cm"><span class="mcards"><span class="mcard sm"><span class="r mk-c">6</span><span class="pip mk-c">♣</span></span><span class="mcard sm"><span class="r mk-c">2</span><span class="pip mk-c">♣</span></span><span class="mcard sm"><span class="r mk-s">3</span><span class="pip mk-s">♠</span></span><span class="mcard sm"><span class="r mk-h">5</span><span class="pip mk-h">♥</span></span></span></span></div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#1D9E75"></span><span class="who"><b>鲨鱼老王</b><i>大盲</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">9</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-s">K</span><span class="pip mk-s">♠</span></span></span><span class="lg-pill raise">下注</span><span class="amt">12.5</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first"><div class="lg-freq"><i class="s-bet" style="width:51%">下注32% 51%</i><i class="s-check" style="width:49%">过牌 49%</i></div><div class="lg-opt"><span class="tx">下注12.5</span><span class="lg-potchip">底池 <b>32%</b></span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>51%</span></div></div>
+<div class="ln-opt lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">过牌</span><span class="fq"><em>频率</em>49%</span></div></div>
+<div class="ln-player lg2 lg2-act mine"><span class="dot" style="background:#378ADD"></span><span class="who"><b>你（玩家）</b><i>按钮</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">A</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-d">4</span><span class="pip mk-d">♦</span></span></span><span class="lg-pill call">跟注</span><span class="amt">12.5</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-gto lg2 lg2-opt"><div class="lg-opt" style="border-top:none"><span class="tx gt">GTO 建议</span></div><div class="lg-freq"><i class="s-call" style="width:100%">跟注 100%</i></div></div>
+<div class="ln-chosen lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">跟注12.5</span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-street lg2 lg2-street"><span class="nm">河牌</span><span class="cm"><span class="mcards"><span class="mcard sm"><span class="r mk-c">6</span><span class="pip mk-c">♣</span></span><span class="mcard sm"><span class="r mk-c">2</span><span class="pip mk-c">♣</span></span><span class="mcard sm"><span class="r mk-s">3</span><span class="pip mk-s">♠</span></span><span class="mcard sm"><span class="r mk-h">5</span><span class="pip mk-h">♥</span></span><span class="mcard sm"><span class="r mk-h">10</span><span class="pip mk-h">♥</span></span></span></span></div>
+<div class="ln-player lg2 lg2-act"><span class="dot" style="background:#1D9E75"></span><span class="who"><b>鲨鱼老王</b><i>大盲</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">9</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-s">K</span><span class="pip mk-s">♠</span></span></span><span class="lg-pill allin">全下</span><span class="amt">24.5</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-chosen lg2 lg2-opt gto-first"><div class="lg-freq"><i class="s-bet" style="width:14%">下注39% 14%</i><i class="s-check" style="width:86%">过牌 86%</i></div><div class="lg-opt"><span class="tx">全下24.5</span><span class="lg-potchip">底池 <b>39%</b></span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>14%</span></div></div>
+<div class="ln-opt lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">过牌</span><span class="fq"><em>频率</em>86%</span></div></div>
+<div class="ln-player lg2 lg2-act mine"><span class="dot" style="background:#378ADD"></span><span class="who"><b>你（玩家）</b><i>按钮</i></span><span class="mcards"><span class="mcard md"><span class="r mk-d">A</span><span class="pip mk-d">♦</span></span><span class="mcard md"><span class="r mk-d">4</span><span class="pip mk-d">♦</span></span></span><span class="lg-pill allin">全下</span><span class="amt">22</span><span class="lg-verdict ok">✓ 符合</span></div>
+<div class="ln-gto lg2 lg2-opt"><div class="lg-opt" style="border-top:none"><span class="tx gt">GTO 建议</span></div><div class="lg-freq"><i class="s-call" style="width:100%">跟注 100%</i></div></div>
+<div class="ln-chosen lg2 lg2-opt gto-last"><div class="lg-opt"><span class="tx">跟注22</span><span class="lg-picked">已选</span><span class="fq"><em>频率</em>100%</span></div></div>
+<div class="ln-win lg2 lg2-potbar"><span class="wn">你（玩家）·按钮 赢得底池<br><b>顺子</b></span><span class="pv">107.5 <small>主池</small></span></div>
+<div class="ln-win lg2 lg2-potbar"><span class="wn">鲨鱼老王·大盲 赢得底池<br><b>高牌</b></span><span class="pv">2.5 <small>未遇注</small></span></div>
+  </div>
+</div>
+<div class="tag">
+  <p>这份预览<b>不是设计稿</b>，是真实牌局跑出来的渲染结果。</p>
+  <p>数据来源：单机 6 人桌自动对局（本脚本驱动）。</p>
+  <p>单机模式下对局信息面板的对手手牌<b>保持全秀开</b>；联机模式下未摊牌的对手会显示<b>牌背</b>。</p>
+</div>
+</div>
+</body>
+</html>

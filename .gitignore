@@ -1,0 +1,32 @@
+# Runtime and local state
+stats.json
+qr-mine.json
+公网地址.html
+公网地址.txt
+单机版二维码.png
+e2e-room.txt
+*.log
+
+# Temporary files and visual-regression output
+tmp-shots/
+ui-verify/
+tmp-wpt-*
+*.tmp
+*.bak
+*.bak-*
+
+# Local tools and dependencies
+node_modules/
+tools/cloudflared.exe
+tools/node_modules/
+
+# Codex / WorkBuddy workspace metadata
+.workbuddy/
+*.genie
+.env
+.env.*
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
